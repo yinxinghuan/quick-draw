@@ -62,6 +62,29 @@ export function startGame({ canvas, hud }){
     camera.position.set(0, camY, camZ * z);
     camera.lookAt(CAM_LOOK);
   }
+  // Cinematic resolve camera: during the slow-mo finish, ease from the wide framing to a
+  // dramatic push-in + slight orbit on the WINNER (gun raised), the loser shattering beside
+  // them — then ease back to framing for the next duel. Smoothed both ways so it never snaps.
+  const _smooth = u => { u = clamp(u, 0, 1); return u * u * (3 - 2 * u); };
+  const _camPos = new THREE.Vector3(), _camLook = new THREE.Vector3();
+  function updateCamera(dt){
+    if (state === RESOLVE){
+      const wx = winnerSign * SEP;
+      const k = _smooth(resolveT / 0.85);                 // 0 → 1 push-in
+      _camPos.set(
+        lerp(0, wx * 0.55, k) + Math.sin(resolveT * 0.9) * 0.18 * k,   // drift toward the winner + a touch of orbit
+        lerp(camY, 1.45, k),                                            // crane down
+        lerp(camZ, camZ * 0.5, k));                                     // dolly in
+      _camLook.set(wx * 0.8, lerp(1.15, 1.02, k), 0);
+    } else {
+      const z = 1 - camPunch * 0.1;
+      _camPos.set(0, camY, camZ * z);
+      _camLook.set(CAM_LOOK.x, CAM_LOOK.y, CAM_LOOK.z);
+    }
+    const s = clamp(dt * (state === RESOLVE ? 10 : 6), 0, 1);
+    camera.position.lerp(_camPos, s);
+    camera.lookAt(_camLook);
+  }
   frameCamera(); placeCamera();
 
   // ── dusk-desert sky: deep indigo crown → blazing amber sun on the horizon ──
@@ -245,13 +268,24 @@ export function startGame({ canvas, hud }){
   function doSlow(amt, dur){ slow = dur; slowAmt = amt; }
 
   // ── WebAudio ──
-  let AC = null, master = null, tense = null, tenseGain = null;
+  let AC = null, master = null, tense = null, tenseGain = null, windG = null;
   function audioUnlock(){
     if (AC){ if (AC.state !== 'running' && AC.resume) AC.resume(); return; }
     const ACtor = window.AudioContext || window.webkitAudioContext; if (!ACtor) return;
-    AC = new ACtor(); master = AC.createGain(); master.gain.value = 0.9;
+    AC = new ACtor(); master = AC.createGain(); master.gain.value = 0.95;
     const comp = AC.createDynamicsCompressor(); master.connect(comp); comp.connect(AC.destination);
     if (AC.state !== 'running' && AC.resume) AC.resume();
+    startWind();
+  }
+  // soft desert wind — a looping band-passed noise bed so the street is never dead
+  function startWind(){
+    if (!AC || windG) return;
+    const n = Math.floor(AC.sampleRate * 2); const buf = AC.createBuffer(1, n, AC.sampleRate);
+    const d = buf.getChannelData(0); for (let i = 0; i < n; i++) d[i] = Math.random()*2-1;
+    const src = AC.createBufferSource(); src.buffer = buf; src.loop = true;
+    windG = AC.createGain(); windG.gain.value = 0.05;
+    const bp = AC.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 480; bp.Q.value = 0.7;
+    src.connect(bp); bp.connect(windG); windG.connect(master); src.start();
   }
   function tone(freq, dur, o = {}){
     if (!AC) return; const t0 = AC.currentTime + (o.delay||0);
@@ -276,10 +310,26 @@ export function startGame({ canvas, hud }){
     const lp = AC.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value = 180;
     tense.connect(lp); lp.connect(tenseGain); tense.start();
   }
-  function tenseUp(on){ if (tenseGain && AC) tenseGain.gain.setTargetAtTime(on ? 0.07 : 0.0001, AC.currentTime, 0.2); }
-  function sfxDrawCall(){ tone(1320, 0.16, { type: 'square', gain: 0.16 }); tone(880, 0.2, { gain: 0.12, delay: 0.02 }); }
-  function sfxShot(){ noiseBurst(0.18, { gain: 0.3, hp: 300 }); tone(140, 0.16, { type: 'sawtooth', gain: 0.18, slideTo: 50 }); }
-  function sfxWin(){ tone(523, 0.12, { gain: 0.16 }); tone(784, 0.18, { gain: 0.14, delay: 0.09 }); }
+  function tenseUp(on){ if (tenseGain && AC) tenseGain.gain.setTargetAtTime(on ? 0.06 : 0.0001, AC.currentTime, 0.2); }
+  // lub-dub heartbeat during the tense wait (the loop calls it faster as the wait drags on)
+  function sfxHeart(){ tone(72, 0.1, { type: 'sine', gain: 0.24, slideTo: 44 }); tone(60, 0.12, { type: 'sine', gain: 0.16, slideTo: 38, delay: 0.13 }); }
+  // sharp bright DRAW sting + a rising zip
+  function sfxDrawCall(){
+    tone(1700, 0.08, { type: 'square', gain: 0.16 });
+    tone(2550, 0.12, { type: 'sine', gain: 0.11, delay: 0.01 });
+    tone(320, 0.18, { type: 'sawtooth', gain: 0.12, slideTo: 1300 });
+  }
+  // a gunshot with texture: crack transient + low body thump + 2 canyon-echo slapbacks
+  function sfxShot(){
+    noiseBurst(0.05, { gain: 0.55, hp: 1900 });                 // crack
+    tone(175, 0.2, { type: 'triangle', gain: 0.32, slideTo: 46 }); // body
+    noiseBurst(0.14, { gain: 0.24, hp: 240 });                  // blast
+    tone(150, 0.13, { type: 'triangle', gain: 0.13, slideTo: 52, delay: 0.19, lp: 1100 }); // echo 1
+    noiseBurst(0.1, { gain: 0.08, hp: 320, delay: 0.19 });
+    tone(140, 0.12, { type: 'triangle', gain: 0.07, slideTo: 50, delay: 0.4, lp: 820 });    // echo 2
+  }
+  function sfxWin(){ [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.15, { gain: 0.13, delay: i * 0.07 })); }   // rising flourish
+  function sfxLose(){ tone(230, 0.55, { type: 'sawtooth', gain: 0.13, slideTo: 80, lp: 900 }); }                  // ominous descent
   function sfxFoul(){ tone(200, 0.4, { type: 'square', gain: 0.18, slideTo: 90 }); noiseBurst(0.3, { gain: 0.1, hp: 200 }); }
   function sfxClick(){ tone(660, 0.07, { gain: 0.12, slideTo: 880 }); }
 
@@ -288,6 +338,7 @@ export function startGame({ canvas, hud }){
   let state = READY;
   let duelIdx = 0, wins = 0, best = readBest();
   let setT = 0, setDelay = 0, drawAtMs = 0, oppReaction = 0, resolveT = 0, playerWon = false, lastReaction = 0;
+  let heartT = 0, winnerSign = -1;
 
   function readBest(){ try { return Number(localStorage.getItem('qd.best')) || 0; } catch(e){ return 0; } }
   function writeBest(v){ try { localStorage.setItem('qd.best', String(v)); } catch(e){} }
@@ -305,7 +356,7 @@ export function startGame({ canvas, hud }){
     newOpponent();
     setRestPose(player);
     oppReaction = oppReactionFor(duelIdx);
-    state = SET; setT = 0;
+    state = SET; setT = 0; heartT = 0.35;
     setDelay = SET_MIN + Math.random() * (SET_MAX - SET_MIN);
     startTense(); tenseUp(true);
     hud.setWins(wins);
@@ -324,13 +375,14 @@ export function startGame({ canvas, hud }){
 
   function resolve(won, foul){
     state = RESOLVE; resolveT = 0; playerWon = won;
+    winnerSign = won ? -1 : 1;                  // who's left standing (cinematic camera focuses them)
     hud.flashDraw(false);
     tenseUp(false);
-    doSlow(0.32, 0.6);
+    doSlow(0.28, 0.95);                         // slow-mo covers the cinematic push-in
     if (foul){
-      // drew too early — opponent guns you down
       drawAndFire(opp); shatter(player);
       hud.setStatus('TOO EARLY!', 'foul');
+      sfxFoul(); sfxLose();
     } else if (won){
       drawAndFire(player); shatter(opp);
       wins += 1; duelIdx += 1;
@@ -341,6 +393,7 @@ export function startGame({ canvas, hud }){
     } else {
       drawAndFire(opp); shatter(player);
       hud.setStatus('OUT-DRAWN', 'lose');
+      sfxLose();
     }
   }
 
@@ -401,6 +454,9 @@ export function startGame({ canvas, hud }){
 
     if (state === SET){
       setT += gdt;
+      // heartbeat that quickens as the wait drags on (tension builds)
+      heartT -= gdt;
+      if (heartT <= 0){ sfxHeart(); heartT = lerp(0.95, 0.42, clamp(setT / setDelay, 0, 1)); }
       if (setT >= setDelay) fireDraw();
     } else if (state === DRAW){
       // opponent reacts on its own clock — if the player hasn't fired in time, they lose
@@ -416,7 +472,7 @@ export function startGame({ canvas, hud }){
     }
 
     updateParticles(gdt);
-    placeCamera();
+    updateCamera(dt);
     composer.render();
   }
 
