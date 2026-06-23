@@ -69,21 +69,21 @@ export function startGame({ canvas, hud }){
   const _camPos = new THREE.Vector3(), _camLook = new THREE.Vector3();
   function updateCamera(dt){
     if (state === RESOLVE){
-      const wx = winnerSign * SEP;
-      const k = _smooth(resolveT / 0.85);                 // 0 → 1 push-in
-      _camPos.set(
-        lerp(0, wx * 0.55, k) + Math.sin(resolveT * 0.9) * 0.18 * k,   // drift toward the winner + a touch of orbit
-        lerp(camY, 1.45, k),                                            // crane down
-        lerp(camZ, camZ * 0.5, k));                                     // dolly in
-      _camLook.set(wx * 0.8, lerp(1.15, 1.02, k), 0);
+      // ORBIT around the duel's centre, always looking AT the centre — so both fighters
+      // AND the loser shattering stay framed the whole sweep. Starts (k=0) exactly at the
+      // wide front framing, so it flows out of it with no cut, then arcs to one side with a
+      // gentle dolly-in + crane to show the 3D of the moment.
+      const k = _smooth(resolveT / 1.15);
+      const th = winnerSign * 0.62 * k;                  // swing toward the winner's side
+      const R = lerp(camZ, camZ * 0.82, k);              // mild dolly-in (stay wide enough for both)
+      camera.position.set(Math.sin(th) * R, lerp(camY, camY + 0.55, k), Math.cos(th) * R);
+      camera.lookAt(0, 1.02, 0);
     } else {
       const z = 1 - camPunch * 0.1;
       _camPos.set(0, camY, camZ * z);
-      _camLook.set(CAM_LOOK.x, CAM_LOOK.y, CAM_LOOK.z);
+      camera.position.lerp(_camPos, clamp(dt * 6, 0, 1));   // ease back to framing for the next duel
+      camera.lookAt(CAM_LOOK);
     }
-    const s = clamp(dt * (state === RESOLVE ? 10 : 6), 0, 1);
-    camera.position.lerp(_camPos, s);
-    camera.lookAt(_camLook);
   }
   frameCamera(); placeCamera();
 
