@@ -14,7 +14,8 @@ import { P, box } from './lib/prims.js';
 import { CHARACTERS } from './builders/characters.js?v=1';
 
 // --- tunables ---------------------------------------------------------------
-const PLAYER_X = -2.5, OPP_X = 2.5;          // the two marks on the street
+const SEP = 1.7;                             // half the gap between the two marks
+const PLAYER_X = -SEP, OPP_X = SEP;          // the two marks on the street
 const HERO_SCALE = 0.78;
 const SET_MIN = 1.2, SET_MAX = 3.6;          // random tense wait before DRAW
 const LEAD_IN = 0.45;                        // un-foulable grace at the very start of the wait
@@ -44,16 +45,24 @@ export function startGame({ canvas, hud }){
   const scene = new THREE.Scene();
   scene.fog = new THREE.Fog(0xd9956a, 22, 48);
 
-  const camera = new THREE.PerspectiveCamera(44, 1, 0.1, 120);
-  const CAM_BASE = new THREE.Vector3(-1.1, 2.7, 9.6);
+  const FOV = 46, FRAME_HALF_W = 2.9;          // world half-width that MUST stay in frame (both fighters + margin)
+  const camera = new THREE.PerspectiveCamera(FOV, 1, 0.1, 120);
   const CAM_LOOK = new THREE.Vector3(0, 1.15, 0);
-  let camPunch = 0;
+  let camPunch = 0, camZ = 12, camY = 3.4;
+  // Pull the camera back far enough that BOTH fighters fit horizontally — on a narrow
+  // portrait phone the horizontal FOV is small, so this distance grows. Centred (x=0).
+  function frameCamera(){
+    const aspect = camera.aspect || 1;
+    const hHalf = Math.atan(Math.tan((FOV * Math.PI / 180) / 2) * aspect);   // horizontal half-FOV
+    camZ = clamp(FRAME_HALF_W / Math.tan(hHalf), 7.5, 24);
+    camY = camZ * 0.26 + 0.5;
+  }
   function placeCamera(){
-    const z = 1 - camPunch * 0.12;
-    camera.position.set(CAM_BASE.x * z, CAM_BASE.y, CAM_BASE.z * z);
+    const z = 1 - camPunch * 0.1;
+    camera.position.set(0, camY, camZ * z);
     camera.lookAt(CAM_LOOK);
   }
-  placeCamera();
+  frameCamera(); placeCamera();
 
   // ── dusk-desert sky: deep indigo crown → blazing amber sun on the horizon ──
   const sky = new THREE.Mesh(
@@ -134,6 +143,7 @@ export function startGame({ canvas, hud }){
     const w = window.innerWidth, h = window.innerHeight;
     renderer.setSize(w, h, false); composer.setSize(w, h);
     camera.aspect = w / h; camera.updateProjectionMatrix();
+    frameCamera(); placeCamera();
   }
   window.addEventListener('resize', resize); resize();
 
