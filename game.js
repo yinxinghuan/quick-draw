@@ -66,24 +66,28 @@ export function startGame({ canvas, hud }){
   // dramatic push-in + slight orbit on the WINNER (gun raised), the loser shattering beside
   // them — then ease back to framing for the next duel. Smoothed both ways so it never snaps.
   const _smooth = u => { u = clamp(u, 0, 1); return u * u * (3 - 2 * u); };
-  const _camPos = new THREE.Vector3(), _camLook = new THREE.Vector3();
+  const _camPos = new THREE.Vector3(), _camLook = new THREE.Vector3(), _lookCur = new THREE.Vector3(0, 1.15, 0);
   function updateCamera(dt){
     if (state === RESOLVE){
-      // ORBIT around the duel's centre, always looking AT the centre — so both fighters
-      // AND the loser shattering stay framed the whole sweep. Starts (k=0) exactly at the
-      // wide front framing, so it flows out of it with no cut, then arcs to one side with a
-      // gentle dolly-in + crane to show the 3D of the moment.
-      const k = _smooth(resolveT / 1.15);
-      const th = winnerSign * 0.62 * k;                  // swing toward the winner's side
-      const R = lerp(camZ, camZ * 0.82, k);              // mild dolly-in (stay wide enough for both)
-      camera.position.set(Math.sin(th) * R, lerp(camY, camY + 0.55, k), Math.cos(th) * R);
-      camera.lookAt(0, 1.02, 0);
+      // ORBIT around the duel centre, always looking AT it — both fighters + the loser
+      // shattering stay framed the whole sweep. At k=0 the target equals the wide front
+      // framing, so it flows out with no cut; then a gentle arc + mild dolly-in + crane.
+      const k = _smooth(resolveT / 1.4);
+      const th = winnerSign * 0.6 * k;
+      const R = lerp(camZ, camZ * 0.85, k);
+      _camPos.set(Math.sin(th) * R, lerp(camY, camY + 0.5, k), Math.cos(th) * R);
+      _camLook.set(0, 1.02, 0);
     } else {
       const z = 1 - camPunch * 0.1;
       _camPos.set(0, camY, camZ * z);
-      camera.position.lerp(_camPos, clamp(dt * 6, 0, 1));   // ease back to framing for the next duel
-      camera.lookAt(CAM_LOOK);
+      _camLook.set(CAM_LOOK.x, CAM_LOOK.y, CAM_LOOK.z);
     }
+    // Low-pass follow: lerp the camera (and the look point) toward the target rather than
+    // snapping to it, so frame hitches during the shatter don't make the orbit stutter.
+    const s = clamp(dt * 6.5, 0, 1);
+    camera.position.lerp(_camPos, s);
+    _lookCur.lerp(_camLook, s);
+    camera.lookAt(_lookCur);
   }
   frameCamera(); placeCamera();
 
@@ -283,8 +287,8 @@ export function startGame({ canvas, hud }){
     const n = Math.floor(AC.sampleRate * 2); const buf = AC.createBuffer(1, n, AC.sampleRate);
     const d = buf.getChannelData(0); for (let i = 0; i < n; i++) d[i] = Math.random()*2-1;
     const src = AC.createBufferSource(); src.buffer = buf; src.loop = true;
-    windG = AC.createGain(); windG.gain.value = 0.05;
-    const bp = AC.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 480; bp.Q.value = 0.7;
+    windG = AC.createGain(); windG.gain.value = 0.018;        // very soft — was a hissy 0.05
+    const bp = AC.createBiquadFilter(); bp.type = 'lowpass'; bp.frequency.value = 320; bp.Q.value = 0.4;  // low rumble, not a hiss
     src.connect(bp); bp.connect(windG); windG.connect(master); src.start();
   }
   function tone(freq, dur, o = {}){
@@ -310,9 +314,9 @@ export function startGame({ canvas, hud }){
     const lp = AC.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value = 180;
     tense.connect(lp); lp.connect(tenseGain); tense.start();
   }
-  function tenseUp(on){ if (tenseGain && AC) tenseGain.gain.setTargetAtTime(on ? 0.06 : 0.0001, AC.currentTime, 0.2); }
+  function tenseUp(on){ if (tenseGain && AC) tenseGain.gain.setTargetAtTime(on ? 0.03 : 0.0001, AC.currentTime, 0.2); }
   // lub-dub heartbeat during the tense wait (the loop calls it faster as the wait drags on)
-  function sfxHeart(){ tone(72, 0.1, { type: 'sine', gain: 0.24, slideTo: 44 }); tone(60, 0.12, { type: 'sine', gain: 0.16, slideTo: 38, delay: 0.13 }); }
+  function sfxHeart(){ tone(72, 0.1, { type: 'sine', gain: 0.16, slideTo: 44 }); tone(60, 0.12, { type: 'sine', gain: 0.11, slideTo: 38, delay: 0.13 }); }
   // sharp bright DRAW sting + a rising zip
   function sfxDrawCall(){
     tone(1700, 0.08, { type: 'square', gain: 0.16 });
