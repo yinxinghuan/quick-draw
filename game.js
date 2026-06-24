@@ -338,8 +338,11 @@ export function startGame({ canvas, hud }){
   function sfxClick(){ tone(660, 0.07, { gain: 0.12, slideTo: 880 }); }
 
   // ── state machine ──────────────────────────────────────────────────────────
-  const READY = 'ready', SET = 'set', DRAW = 'draw', RESOLVE = 'resolve', DEAD = 'dead';
-  let state = READY;
+  // ATTRACT = preloaded/idle standoff before the player's first tap (no countdown, can't lose);
+  // the first tap kicks off the first duel. (The game is loaded off-screen in the feed, so it
+  // must NOT auto-run the draw timer — otherwise the first thing the user sees is a loss.)
+  const ATTRACT = 'attract', SET = 'set', DRAW = 'draw', RESOLVE = 'resolve', DEAD = 'dead';
+  let state = ATTRACT;
   let duelIdx = 0, wins = 0, best = readBest();
   let setT = 0, setDelay = 0, drawAtMs = 0, oppReaction = 0, resolveT = 0, playerWon = false, lastReaction = 0;
   let heartT = 0, winnerSign = -1;
@@ -357,7 +360,7 @@ export function startGame({ canvas, hud }){
   }
 
   function beginDuel(){
-    newOpponent();
+    if (!opp || opp.fallen) newOpponent();   // reuse the attract-scene outlaw for the first duel
     setRestPose(player);
     oppReaction = oppReactionFor(duelIdx);
     state = SET; setT = 0; heartT = 0.35;
@@ -408,15 +411,20 @@ export function startGame({ canvas, hud }){
     player = buildFighter(ROSTER[Math.floor(Math.random()*ROSTER.length)], -1);
     setRestPose(player);
     camPunch = 0; slow = 0; timeScale = 1;
+    // ATTRACT: a populated standoff (both gunslingers ready) that just idles — NO draw
+    // countdown — until the player's first tap. Survives the feed's off-screen preload.
+    newOpponent();
+    state = ATTRACT;
     hud.setDead(null); hud.setWins(0); hud.setBest(best);
-    beginDuel();
     hud.setReady(true);
   }
 
   // input — a single tap is the whole game
   function onTap(){
     audioUnlock();
-    if (state === SET){
+    if (state === ATTRACT){
+      beginDuel();                         // first tap just starts the gauntlet — never a foul
+    } else if (state === SET){
       if (setT < LEAD_IN) return;          // tiny grace so a carried-over tap doesn't foul
       resolve(false, true);                // FOUL — drew before the signal
     } else if (state === DRAW){
@@ -453,7 +461,7 @@ export function startGame({ canvas, hud }){
       if (!f || f.fallen || !f.rig) continue;
       const b = Math.sin(idleClock * 2.2 + (f === opp ? 1.7 : 0)) * 0.5 + 0.5;
       f.model.position.y = (f._baseY || 0) + b * 0.015;
-      if (state === SET || state === READY){ f.rig.armR.rotation.x = f.baseArmR + 0.05 + b * 0.04; }
+      if (state === SET || state === ATTRACT){ f.rig.armR.rotation.x = f.baseArmR + 0.05 + b * 0.04; }
     }
 
     if (state === SET){
