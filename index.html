@@ -174,7 +174,8 @@ const hud = {
   },
   flashDraw(on){ if (on){ drawEl.classList.remove('show'); void drawEl.offsetWidth; drawEl.classList.add('show'); } else drawEl.classList.remove('show'); drawEl.style.opacity = on ? '' : '0'; },
   setDead(payload){
-    if (!payload){ overEl.classList.remove('show'); started = false; wordmarkEl.classList.remove('hidden'); winsEl.classList.remove('show'); oppEl.classList.remove('show'); statusEl.classList.remove('show'); guideEl.classList.add('show'); return; }
+    if (!payload){ overEl.classList.remove('show'); return; }   // just hide the overlay
+    started = false;                                            // run ended → next enterPlay re-arms
     $('#finalWins').textContent = String(payload.wins);
     $('#finalBest').textContent = fmtMs(payload.best);
     $('#finalKiller').textContent = payload.killer || 'The Drifter';
@@ -195,7 +196,9 @@ addEventListener('pointerdown', (e) => {
   api.onTap();
 }, { passive:true });
 
-$('#again').addEventListener('click', () => api.restart());
+// Replaying from the game-over card → go straight into the first duel (no attract):
+// the player is already engaged.
+$('#again').addEventListener('click', () => { enterPlay(); api.restart(); });
 $('#overRank').addEventListener('click', openLbFull);
 
 // ── leaderboard (shared pattern) ──

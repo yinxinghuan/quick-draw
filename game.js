@@ -438,7 +438,7 @@ export function startGame({ canvas, hud }){
     submitScore(wins);
     hud.setDead({ wins, best, killer: outlawName(duelIdx) });
   }
-  function restart(){ audioUnlock(); sfxClick(); reset(); }
+  function restart(){ audioUnlock(); sfxClick(); reset(); beginDuel(); }   // explicit replay → straight into the first duel (skip attract)
 
   // ── loop ──
   let last = performance.now(), idleClock = 0;
