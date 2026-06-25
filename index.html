@@ -177,7 +177,7 @@ const hud = {
     if (!payload){ overEl.classList.remove('show'); return; }   // just hide the overlay
     started = false;                                            // run ended → next enterPlay re-arms
     $('#finalWins').textContent = String(payload.wins);
-    $('#finalBest').textContent = fmtMs(payload.best);
+    $('#finalBest').textContent = fmtMs(payload.best * 1000); // best is stored in seconds → ms for display
     $('#finalKiller').textContent = payload.killer || 'The Drifter';
     overEl.classList.add('show');
     trySendBeatNotify(payload.wins);
